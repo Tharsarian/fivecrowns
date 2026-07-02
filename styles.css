@@ -54,6 +54,8 @@
 
 html {
   font-size: var(--font-size-base);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -67,7 +69,11 @@ body {
 /* Layout containers */
 .app-container {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: var(--container-padding);
+  padding-left: max(var(--container-padding), env(safe-area-inset-left));
+  padding-right: max(var(--container-padding), env(safe-area-inset-right));
+  padding-bottom: max(var(--container-padding), env(safe-area-inset-bottom));
 }
 
 .screen {
@@ -227,6 +233,8 @@ body {
   text-decoration: none;
   white-space: nowrap;
   min-height: 2.25rem;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .btn:disabled {
@@ -772,5 +780,11 @@ body {
   
   .player-header .truncate {
     max-width: 60px;
+  }
+
+  /* Inputs must be >= 16px on small screens so iOS Safari does not
+     auto-zoom the page when a field is focused. */
+  .text-input {
+    font-size: 16px !important;
   }
 }

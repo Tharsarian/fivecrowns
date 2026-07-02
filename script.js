@@ -1,8 +1,25 @@
 // Five Crowns Score Keeper JavaScript
 
+// Correct, self-contained SVG icon paths (24x24 viewBox, fill).
+const ICONS = {
+    crown: 'M5 16L3 5l5.5 4L12 4l3.5 5L21 5l-2 11H5zm0 3h14v2H5z',
+    trophy: 'M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94A5.01 5.01 0 0 0 11 18.9V21H7v2h10v-2h-4v-2.1a5.01 5.01 0 0 0 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z',
+    star: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
+    trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
+};
+
 class FiveCrownsGame {
     constructor() {
-        this.gameState = {
+        this.STORAGE_KEY = 'fiveCrownsGame';
+        this.gameState = this.getDefaultState();
+
+        this.initializeDOM();
+        this.setupEventListeners();
+        this.restoreOrStart();
+    }
+
+    getDefaultState() {
+        return {
             players: [],
             currentRound: 1,
             currentDealer: 0,
@@ -10,10 +27,6 @@ class FiveCrownsGame {
             isGameComplete: false,
             appState: 'setup' // 'setup', 'playing', 'results'
         };
-        
-        this.initializeDOM();
-        this.setupEventListeners();
-        this.showSetupScreen();
     }
 
     initializeDOM() {
@@ -23,7 +36,7 @@ class FiveCrownsGame {
             setupScreen: document.getElementById('setupScreen'),
             gameScreen: document.getElementById('gameScreen'),
             resultsScreen: document.getElementById('resultsScreen'),
-            
+
             // Setup elements
             newPlayerInput: document.getElementById('newPlayerInput'),
             addPlayerBtn: document.getElementById('addPlayerBtn'),
@@ -31,7 +44,7 @@ class FiveCrownsGame {
             playersSection: document.getElementById('playersSection'),
             playersList: document.getElementById('playersList'),
             playerCount: document.getElementById('playerCount'),
-            
+
             // Game elements
             newGameBtn: document.getElementById('newGameBtn'),
             currentRound: document.getElementById('currentRound'),
@@ -44,7 +57,7 @@ class FiveCrownsGame {
             completeRoundBtn: document.getElementById('completeRoundBtn'),
             scoreTable: document.getElementById('scoreTable'),
             hiddenScoresMsg: document.getElementById('hiddenScoresMsg'),
-            
+
             // Results elements
             startNewGameBtn: document.getElementById('startNewGameBtn'),
             winnerText: document.getElementById('winnerText'),
@@ -60,33 +73,73 @@ class FiveCrownsGame {
             if (e.key === 'Enter') this.addPlayer();
         });
         this.elements.startGameBtn.addEventListener('click', () => this.startGame());
-        
+
         // Game screen listeners
-        this.elements.newGameBtn.addEventListener('click', () => this.showSetupScreen());
+        this.elements.newGameBtn.addEventListener('click', () => this.startNewGame());
         this.elements.completeRoundBtn.addEventListener('click', () => this.completeRound());
-        
+
         // Results screen listeners
-        this.elements.startNewGameBtn.addEventListener('click', () => this.showSetupScreen());
+        this.elements.startNewGameBtn.addEventListener('click', () => this.startNewGame());
     }
 
-    showSetupScreen() {
-        this.resetGameState();
+    // --- Persistence -------------------------------------------------------
+
+    saveState() {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.gameState));
+        } catch (e) {
+            // Storage unavailable (private mode / quota) — game still works in-memory.
+        }
+    }
+
+    loadState() {
+        try {
+            const raw = localStorage.getItem(this.STORAGE_KEY);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (!data || !Array.isArray(data.players) || !Array.isArray(data.scores)) {
+                return null;
+            }
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    restoreOrStart() {
+        const saved = this.loadState();
+        if (saved) {
+            this.gameState = saved;
+            if (saved.appState === 'playing') {
+                this.showScreen('playing');
+                this.renderGameBoard();
+                return;
+            }
+            if (saved.appState === 'results') {
+                this.showScreen('results');
+                this.renderResults();
+                return;
+            }
+        }
+        this.renderSetup();
+    }
+
+    // --- Setup screen ------------------------------------------------------
+
+    startNewGame() {
+        this.gameState = this.getDefaultState();
+        this.saveState();
+        this.renderSetup();
+    }
+
+    renderSetup() {
+        this.gameState.appState = 'setup';
         this.showScreen('setup');
         this.elements.newPlayerInput.value = '';
         this.updatePlayerCount();
         this.updateStartButton();
         this.renderPlayersList();
-    }
-
-    resetGameState() {
-        this.gameState = {
-            players: [],
-            currentRound: 1,
-            currentDealer: 0,
-            scores: Array(11).fill(null).map(() => []),
-            isGameComplete: false,
-            appState: 'setup'
-        };
+        this.elements.playersSection.classList.toggle('hidden', this.gameState.players.length === 0);
     }
 
     showScreen(screenName) {
@@ -94,7 +147,7 @@ class FiveCrownsGame {
         this.elements.setupScreen.classList.add('hidden');
         this.elements.gameScreen.classList.add('hidden');
         this.elements.resultsScreen.classList.add('hidden');
-        
+
         // Show requested screen
         switch (screenName) {
             case 'setup':
@@ -117,11 +170,13 @@ class FiveCrownsGame {
             this.renderPlayersList();
             this.updatePlayerCount();
             this.updateStartButton();
-            
+            this.saveState();
+
             if (this.gameState.players.length > 0) {
                 this.elements.playersSection.classList.remove('hidden');
             }
         }
+        this.elements.newPlayerInput.focus();
     }
 
     removePlayer(index) {
@@ -129,7 +184,8 @@ class FiveCrownsGame {
         this.renderPlayersList();
         this.updatePlayerCount();
         this.updateStartButton();
-        
+        this.saveState();
+
         if (this.gameState.players.length === 0) {
             this.elements.playersSection.classList.add('hidden');
         }
@@ -138,22 +194,23 @@ class FiveCrownsGame {
     updatePlayerName(index, newName) {
         if (newName.trim()) {
             this.gameState.players[index] = newName.trim();
+            this.saveState();
         }
     }
 
     renderPlayersList() {
         this.elements.playersList.innerHTML = '';
-        
+
         this.gameState.players.forEach((player, index) => {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'player-item';
             playerDiv.innerHTML = `
-                <input type="text" value="${this.escapeHtml(player)}" class="text-input" 
+                <input type="text" value="${this.escapeHtml(player)}" class="text-input" maxlength="20"
                        onchange="game.updatePlayerName(${index}, this.value)">
-                <button class="btn btn-remove" onclick="game.removePlayer(${index})" 
-                        title="Remove ${this.escapeHtml(player)}">
+                <button class="btn btn-remove" onclick="game.removePlayer(${index})"
+                        title="Remove ${this.escapeHtml(player)}" aria-label="Remove ${this.escapeHtml(player)}">
                     <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        <path d="${ICONS.trash}"/>
                     </svg>
                 </button>
             `;
@@ -171,10 +228,11 @@ class FiveCrownsGame {
 
     startGame() {
         if (this.gameState.players.length < 2) return;
-        
+
         this.gameState.appState = 'playing';
         this.gameState.scores = Array(11).fill(null).map(() => Array(this.gameState.players.length).fill(null));
-        
+        this.saveState();
+
         this.showScreen('playing');
         this.renderGameBoard();
     }
@@ -206,35 +264,37 @@ class FiveCrownsGame {
             this.elements.roundScoringCard.classList.add('hidden');
             return;
         }
-        
+
         this.elements.roundScoringCard.classList.remove('hidden');
         this.elements.scoringRound.textContent = this.gameState.currentRound;
-        
+
         this.elements.scoringInputs.innerHTML = '';
-        
+
         this.gameState.players.forEach((player, index) => {
             const inputDiv = document.createElement('div');
             inputDiv.className = 'scoring-item';
-            
+
             const existingScore = this.gameState.scores[this.gameState.currentRound - 1][index];
             const scoreValue = existingScore !== null ? existingScore : '';
-            
+
             inputDiv.innerHTML = `
                 <label class="input-label">${this.escapeHtml(player)}</label>
-                <input type="number" min="0" max="999" value="${scoreValue}" 
-                       class="text-input" placeholder="0" 
+                <input type="number" min="0" max="999" step="1" value="${scoreValue}"
+                       class="text-input" placeholder="0"
+                       inputmode="numeric" pattern="[0-9]*" enterkeyhint="next"
                        onchange="game.updateScore(${index}, this.value)"
                        oninput="game.checkCompleteButton()">
             `;
             this.elements.scoringInputs.appendChild(inputDiv);
         });
-        
+
         this.checkCompleteButton();
     }
 
     updateScore(playerIndex, value) {
         const numValue = parseInt(value, 10);
         this.gameState.scores[this.gameState.currentRound - 1][playerIndex] = isNaN(numValue) ? null : numValue;
+        this.saveState();
         this.checkCompleteButton();
     }
 
@@ -247,15 +307,18 @@ class FiveCrownsGame {
     completeRound() {
         const roundScores = this.gameState.scores[this.gameState.currentRound - 1];
         if (!roundScores.every(score => score !== null && score !== undefined)) return;
-        
+
         const isLastRound = this.gameState.currentRound === 11;
-        
+
         if (isLastRound) {
             this.gameState.isGameComplete = true;
+            this.gameState.appState = 'results';
+            this.saveState();
             this.showResults();
         } else {
             this.gameState.currentRound++;
             this.gameState.currentDealer = (this.gameState.currentDealer + 1) % this.gameState.players.length;
+            this.saveState();
             this.renderGameBoard();
         }
     }
@@ -264,24 +327,24 @@ class FiveCrownsGame {
         const table = this.elements.scoreTable;
         const thead = table.querySelector('thead tr');
         const tbody = table.querySelector('tbody');
-        
+
         // Update header
         thead.innerHTML = '<th class="round-header">Round</th>';
         this.gameState.players.forEach(player => {
             const th = document.createElement('th');
             th.className = 'player-header';
-            th.innerHTML = `<div class="truncate" title="${this.escapeHtml(player)}">${this.truncateText(player, 8)}</div>`;
+            th.innerHTML = `<div class="truncate" title="${this.escapeHtml(player)}">${this.escapeHtml(this.truncateText(player, 8))}</div>`;
             thead.appendChild(th);
         });
-        
+
         // Update body
         tbody.innerHTML = '';
-        
+
         for (let round = 1; round <= 11; round++) {
             const tr = document.createElement('tr');
             const isCurrent = round === this.gameState.currentRound && !this.gameState.isGameComplete;
             if (isCurrent) tr.className = 'current-round';
-            
+
             const roundCell = document.createElement('td');
             roundCell.innerHTML = `
                 <div style="display: flex; flex-direction: column; gap: 0.25rem;">
@@ -290,25 +353,25 @@ class FiveCrownsGame {
                 </div>
             `;
             tr.appendChild(roundCell);
-            
+
             this.gameState.players.forEach((_, playerIndex) => {
                 const td = document.createElement('td');
                 const score = this.gameState.scores[round - 1][playerIndex];
                 td.textContent = score !== null && score !== undefined ? score : '-';
                 tr.appendChild(td);
             });
-            
+
             tbody.appendChild(tr);
         }
-        
+
         // Add totals row
         const totalsRow = document.createElement('tr');
         totalsRow.className = 'totals-row';
-        
+
         const totalCell = document.createElement('td');
         totalCell.textContent = 'Total';
         totalsRow.appendChild(totalCell);
-        
+
         this.gameState.players.forEach((_, playerIndex) => {
             const td = document.createElement('td');
             if (this.gameState.isGameComplete) {
@@ -319,9 +382,9 @@ class FiveCrownsGame {
             }
             totalsRow.appendChild(td);
         });
-        
+
         tbody.appendChild(totalsRow);
-        
+
         // Show/hide hidden scores message
         this.elements.hiddenScoresMsg.classList.toggle('hidden', this.gameState.isGameComplete);
     }
@@ -343,29 +406,29 @@ class FiveCrownsGame {
             total: this.calculateTotalScore(index),
             index
         }));
-        
+
         // Sort by total score (lowest wins)
         const sortedPlayers = [...playerTotals].sort((a, b) => a.total - b.total);
-        
+
         // Update winner text
-        this.elements.winnerText.innerHTML = 
+        this.elements.winnerText.innerHTML =
             `🎉 <strong style="color: var(--primary);">${this.escapeHtml(sortedPlayers[0].name)}</strong> wins with ${sortedPlayers[0].total} points! 🎉`;
-        
+
         // Render rankings
         this.renderRankings(sortedPlayers);
-        
+
         // Render final score table
         this.renderFinalScoreTable();
     }
 
     renderRankings(sortedPlayers) {
         this.elements.rankingsList.innerHTML = '';
-        
+
         sortedPlayers.forEach((player, position) => {
             const rankingDiv = document.createElement('div');
             const positionClass = this.getPositionClass(position);
             rankingDiv.className = `ranking-item ${positionClass}`;
-            
+
             rankingDiv.innerHTML = `
                 <div class="ranking-left">
                     ${this.getPositionIcon(position)}
@@ -379,7 +442,7 @@ class FiveCrownsGame {
                     <div class="points-label">points</div>
                 </div>
             `;
-            
+
             this.elements.rankingsList.appendChild(rankingDiv);
         });
     }
@@ -391,11 +454,11 @@ class FiveCrownsGame {
 
     getPositionIcon(position) {
         const icons = [
-            '<svg class="position-icon gold" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 14l5.5-5.5L10 10l4-4 6 6-1.5 1.5L15 10l-2.5 2.5L8 8 5 16z"/></svg>',
-            '<svg class="position-icon silver" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4V2c0-1.1.9-2 2-2s2 .9 2 2v2h6v2h-1.5L17 22H7L8.5 6H7V4z"/></svg>',
-            '<svg class="position-icon bronze" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
+            `<svg class="position-icon gold" viewBox="0 0 24 24" fill="currentColor"><path d="${ICONS.crown}"/></svg>`,
+            `<svg class="position-icon silver" viewBox="0 0 24 24" fill="currentColor"><path d="${ICONS.trophy}"/></svg>`,
+            `<svg class="position-icon bronze" viewBox="0 0 24 24" fill="currentColor"><path d="${ICONS.star}"/></svg>`
         ];
-        return icons[position] || '<svg class="position-icon other" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+        return icons[position] || `<svg class="position-icon other" viewBox="0 0 24 24" fill="currentColor"><path d="${ICONS.star}"/></svg>`;
     }
 
     getPositionText(position) {
@@ -406,68 +469,71 @@ class FiveCrownsGame {
     renderFinalScoreTable() {
         const table = this.elements.finalScoreTable;
         table.innerHTML = '';
-        
+
         // Create header
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        
+
         const roundHeader = document.createElement('th');
         roundHeader.className = 'round-header';
         roundHeader.textContent = 'Round';
         headerRow.appendChild(roundHeader);
-        
+
         this.gameState.players.forEach(player => {
             const th = document.createElement('th');
             th.className = 'player-header';
-            th.innerHTML = `<div class="truncate" title="${this.escapeHtml(player)}">${this.truncateText(player, 8)}</div>`;
+            th.innerHTML = `<div class="truncate" title="${this.escapeHtml(player)}">${this.escapeHtml(this.truncateText(player, 8))}</div>`;
             headerRow.appendChild(th);
         });
-        
+
         thead.appendChild(headerRow);
         table.appendChild(thead);
-        
+
         // Create body
         const tbody = document.createElement('tbody');
-        
+
         this.gameState.scores.forEach((roundScores, roundIndex) => {
             const tr = document.createElement('tr');
-            
+
             const roundCell = document.createElement('td');
             roundCell.textContent = roundIndex + 1;
             tr.appendChild(roundCell);
-            
+
             this.gameState.players.forEach((_, playerIndex) => {
                 const td = document.createElement('td');
                 td.textContent = roundScores[playerIndex] || 0;
                 tr.appendChild(td);
             });
-            
+
             tbody.appendChild(tr);
         });
-        
+
         // Add totals row
         const totalsRow = document.createElement('tr');
         totalsRow.className = 'totals-row';
-        
+
         const totalHeader = document.createElement('td');
         totalHeader.textContent = 'Total';
         totalsRow.appendChild(totalHeader);
-        
+
         this.gameState.players.forEach((_, playerIndex) => {
             const td = document.createElement('td');
             td.textContent = this.calculateTotalScore(playerIndex);
             totalsRow.appendChild(td);
         });
-        
+
         tbody.appendChild(totalsRow);
         table.appendChild(tbody);
     }
 
     // Utility methods
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     truncateText(text, maxLength) {
@@ -475,14 +541,10 @@ class FiveCrownsGame {
     }
 }
 
-// Initialize the game when the DOM is loaded
+// Initialize the game once when the DOM is ready.
+// `window.game` is used by the inline event handlers in generated markup.
 let game;
 document.addEventListener('DOMContentLoaded', function() {
     game = new FiveCrownsGame();
-});
-
-// Make game methods available globally for inline event handlers
-window.game = null;
-document.addEventListener('DOMContentLoaded', function() {
-    window.game = new FiveCrownsGame();
+    window.game = game;
 });
